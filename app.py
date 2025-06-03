@@ -1,4 +1,3 @@
-# CLO IC Model - Fully Integrated Interactive App (Enhanced Version)
 
 import pandas as pd
 import numpy as np
@@ -40,7 +39,7 @@ capital_call_schedule = {
 capital_call_df = pd.DataFrame(capital_call_schedule)
 capital_call_df['Total Call'] = capital_call_df[['Oakhill','Oaktree','CVC','Ares']].sum(axis=1)
 
-# Detailed cash flow model (12-year horizon)
+# Build detailed cash flow model (12-year horizon)
 years = list(range(2024, 2036))
 cash_flow_df = pd.DataFrame({'Year': years})
 cash_flow_df['Capital Call'] = 0
@@ -55,18 +54,73 @@ cash_flow_df['Net CF'] = cash_flow_df['Distribution'] - cash_flow_df['Capital Ca
 loss_amount = total_commitment * (default_rate/100) * (1 - recovery_rate/100)
 cash_flow_df.loc[cash_flow_df.index[-1], 'Distribution'] -= loss_amount
 
-# Calculate IRR & MOIC
+# Calculate IRR & MOIC for total portfolio
 net_cf_series = [-total_commitment] + list(cash_flow_df['Distribution'].iloc[1:])
 irr = npf.irr(net_cf_series)
 moic = sum(cash_flow_df['Distribution']) / total_commitment
 
-# Results Summary
-st.subheader("Results Summary")
+# === Fund-level calculation ===
+st.subheader("Fund-Level IRR & MOIC")
+funds = ['Oakhill', 'Oaktree', 'CVC', 'Ares']
+commitments = {
+    'Oakhill': commitment_oakhill,
+    'Oaktree': commitment_oaktree,
+    'CVC': commitment_cvc,
+    'Ares': commitment_ares
+}
+fund_results = []
+
+# Fund IRR & MOIC Calculation
+for fund in funds:
+    capital_calls = capital_call_df[fund].tolist()
+    fund_cf = []
+    invested = 0
+    for y in range(12):
+        if y < len(capital_calls):
+            call_amt = capital_calls[y]
+        else:
+            call_amt = 0
+        invested += call_amt
+        dist = invested * (distribution_yield / 100)
+        fund_cf.append(dist - call_amt)
+    loss_fund = commitments[fund] * (default_rate/100) * (1 - recovery_rate/100)
+    fund_cf[-1] -= loss_fund
+    irr_fund = npf.irr([-commitments[fund]] + fund_cf[1:])
+    moic_fund = sum(fund_cf) / commitments[fund]
+    fund_results.append([fund, commitments[fund], irr_fund, moic_fund])
+
+fund_df = pd.DataFrame(fund_results, columns=["Fund", "Commitment", "IRR", "MOIC"])
+fund_df["IRR"] = fund_df["IRR"]*100
+st.dataframe(fund_df.style.format({"Commitment": "{:,.0f}", "IRR": "{:.2f}%", "MOIC": "{:.2f}x"}))
+
+# === Portfolio level summary ===
+st.subheader("Portfolio Results Summary")
 st.write("Total Commitment: $", f"{total_commitment:,.0f}")
 st.write("Adjusted IRR: ", f"{irr*100:.2f}%")
 st.write("Portfolio MOIC: ", f"{moic:.2f}x")
 
-# Sensitivity chart IRR vs Default Rate
+# === Fund-level detailed cash flow charts ===
+for fund in funds:
+    st.subheader(f"{fund} Fund Cash Flow Analysis")
+    fund_calls = capital_call_df[fund].tolist()
+    fund_cashflows = []
+    invested = 0
+    for y in range(12):
+        call_amt = fund_calls[y] if y < len(fund_calls) else 0
+        invested += call_amt
+        dist = invested * (distribution_yield / 100)
+        fund_cashflows.append(dist - call_amt)
+
+    # Plot Fund Cash Flow
+    fig, ax = plt.subplots()
+    ax.bar(range(12), fund_cashflows, label="Fund Cash Flow")
+    ax.axhline(0, color='black', linewidth=1)
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Net Cash Flow ($)")
+    ax.set_title(f"{fund} Annual Net Cash Flow")
+    st.pyplot(fig)
+
+# === IRR Sensitivity chart ===
 st.subheader("IRR Sensitivity to Default Rate")
 def_rates = np.arange(0, 10.5, 0.5)
 calculated_irrs = []
@@ -85,7 +139,7 @@ ax.set_title("IRR vs Default Rate")
 ax.grid(True)
 st.pyplot(fig)
 
-# Cash flow chart
+# === Cash flow chart ===
 st.subheader("Cash Flow Schedule")
 fig2, ax2 = plt.subplots()
 ax2.bar(cash_flow_df['Year'], cash_flow_df['Net CF'])
@@ -95,7 +149,7 @@ ax2.set_ylabel("Net Cash Flow ($)")
 ax2.set_title("Annual Net Cash Flow")
 st.pyplot(fig2)
 
-# Display cash flow table
+# === Full cash flow table ===
 st.subheader("Detailed Cash Flow Table")
 st.dataframe(cash_flow_df.style.format({
     'Capital Call': '{:,.0f}',
